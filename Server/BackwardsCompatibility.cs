@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 
 namespace DarkMultiPlayerServer
 {
@@ -69,6 +70,46 @@ namespace DarkMultiPlayerServer
             {
                 DarkLog.Normal("Kerbal database upgraded to 0.24 format");
             }
+        }
+
+        public static void ConvertSettings(string oldSettings, string newSettings)
+        {
+            if (!File.Exists(oldSettings))
+            {
+                return;
+            }
+
+            using (StreamWriter sw = new StreamWriter(newSettings))
+            {
+                using (StreamReader sr = new StreamReader(oldSettings))
+                {
+
+                    string currentLine;
+                    while ((currentLine = sr.ReadLine()) != null)
+                    {
+                        string trimmedLine = currentLine.Trim();
+                        if (!trimmedLine.Contains(",") || trimmedLine.StartsWith("#") || trimmedLine == string.Empty)
+                        {
+                            continue;
+                        }
+                        int seperatorIndex = trimmedLine.IndexOf(",");
+                        string keyPart = trimmedLine.Substring(0, seperatorIndex).Trim();
+                        string valuePart = trimmedLine.Substring(seperatorIndex + 1).Trim();
+                        string realKey = keyPart;
+                        foreach (FieldInfo fieldInfo in typeof(SettingsStore).GetFields())
+                        {
+                            if (fieldInfo.Name.ToLower() == keyPart.ToLower())
+                            {
+                                realKey = fieldInfo.Name;
+                                break;
+                            }
+                        }
+                        sw.WriteLine(realKey + "=" + valuePart);
+                    }
+                }
+            }
+            File.Delete(oldSettings);
+            DarkLog.Debug("Converted settings to DMP v0.2.1.0 format");
         }
     }
 }

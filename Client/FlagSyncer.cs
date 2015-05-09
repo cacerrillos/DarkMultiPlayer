@@ -188,7 +188,7 @@ namespace DarkMultiPlayer
             {
                 flagTexture.name = "DarkMultiPlayer/Flags/" + Path.GetFileNameWithoutExtension(flagRespondMessage.flagName);
                 File.WriteAllBytes(flagFile, flagRespondMessage.flagData);
-                GameDatabase.TextureInfo ti = new GameDatabase.TextureInfo(flagTexture, false, true, false);
+                GameDatabase.TextureInfo ti = new GameDatabase.TextureInfo(null, flagTexture, false, true, false);
                 ti.name = flagTexture.name;
                 bool containsTexture = false;
                 foreach (GameDatabase.TextureInfo databaseTi in GameDatabase.Instance.databaseTexture)

@@ -35,6 +35,7 @@ namespace DarkMultiPlayer
         private bool chatLocked = false;
         private bool ignoreChatInput = false;
         private bool selectTextBox = false;
+        private int previousTextID = 0;
         private string sendText = "";
         public string consoleIdentifier = "";
         //chat command register
@@ -61,7 +62,6 @@ namespace DarkMultiPlayer
         //const
         private const string DMP_CHAT_LOCK = "DMP_ChatLock";
         private const string DMP_CHAT_WINDOW_LOCK = "DMP_Chat_Window_Lock";
-        public const ControlTypes BLOCK_ALL_CONTROLS = ControlTypes.ALL_SHIP_CONTROLS | ControlTypes.ACTIONS_ALL | ControlTypes.EVA_INPUT | ControlTypes.TIMEWARP | ControlTypes.MISC | ControlTypes.GROUPS_ALL | ControlTypes.CUSTOM_ACTION_GROUPS;
 
         public static ChatWorker fetch
         {
@@ -340,7 +340,10 @@ namespace DarkMultiPlayer
             newChannelMessages.Enqueue(ce);
             if (!display)
             {
-                chatButtonHighlighted = true;
+                if (ce.fromPlayer != consoleIdentifier)
+                {
+                    chatButtonHighlighted = true;
+                }
                 if (ce.channel != "")
                 {
                     ScreenMessages.PostScreenMessage(ce.fromPlayer + " -> #" + ce.channel + ": " + ce.message, 5f, ScreenMessageStyle.UPPER_LEFT);
@@ -576,7 +579,7 @@ namespace DarkMultiPlayer
                     channelMessages.Add(ce.channel, new List<string>());
                 }
                 //Highlight if the channel isn't selected.
-                if (selectedChannel != null && ce.channel == "")
+                if (selectedChannel != null && ce.channel == "" && ce.fromPlayer != consoleIdentifier)
                 {
                     if (!highlightChannel.Contains(ce.channel))
                     {
@@ -594,10 +597,18 @@ namespace DarkMultiPlayer
                 if (selectedChannel == null && selectedPMChannel == null && ce.channel == "")
                 {
                     chatScrollPos.y = float.PositiveInfinity;
+                    if (chatLocked)
+                    {
+                        selectTextBox = true;
+                    }
                 }
                 if (selectedChannel != null && selectedPMChannel == null && ce.channel == selectedChannel)
                 {
                     chatScrollPos.y = float.PositiveInfinity;
+                    if (chatLocked)
+                    {
+                        selectTextBox = true;
+                    }
                 }
                 channelMessages[ce.channel].Add(ce.fromPlayer + ": " + ce.message);
             }
@@ -632,6 +643,10 @@ namespace DarkMultiPlayer
                 if (selectedPMChannel != null && selectedChannel == null && (pe.fromPlayer == selectedPMChannel || pe.fromPlayer == Settings.fetch.playerName))
                 {
                     chatScrollPos.y = float.PositiveInfinity;
+                    if (chatLocked)
+                    {
+                        selectTextBox = true;
+                    }
                 }
                 if (pe.fromPlayer != Settings.fetch.playerName)
                 {
@@ -655,13 +670,13 @@ namespace DarkMultiPlayer
                     }
                 }
                 //Move the bar to the bottom on a new message
-                if (selectedChannel == null && selectedPMChannel == null && consoleIdentifier == "")
-                {
-                    chatScrollPos.y = float.PositiveInfinity;
-                }
                 if (selectedChannel != null && selectedPMChannel == null && consoleIdentifier == selectedChannel)
                 {
                     chatScrollPos.y = float.PositiveInfinity;
+                    if (chatLocked)
+                    {
+                        selectTextBox = true;
+                    }
                 }
                 consoleMessages.Add(ce.message);
             }
@@ -737,9 +752,9 @@ namespace DarkMultiPlayer
             if (selectedChannel != null && selectedChannel != consoleIdentifier || selectedPMChannel != null)
             {
                 if (GUILayout.Button("Leave", buttonStyle))
-               {
-                   leaveEventHandled = false;
-               }
+                {
+                    leaveEventHandled = false;
+                }
             }
             DrawConsole();
             GUILayout.EndHorizontal();
@@ -845,6 +860,16 @@ namespace DarkMultiPlayer
             GUILayout.BeginHorizontal();
             GUI.SetNextControlName("SendTextArea");
             string tempSendText = GUILayout.TextArea(sendText, textAreaStyle);
+            //When a control is inserted or removed from the GUI, Unity's focusing starts tripping balls. This is a horrible workaround for unity that shouldn't exist...
+            int newTextID = GUIUtility.GetControlID(FocusType.Keyboard);
+            if (previousTextID != newTextID)
+            {
+                previousTextID = newTextID;
+                if (chatLocked)
+                {
+                    selectTextBox = true;
+                }
+            }
             //Don't add the newline to the messages, queue a send
             if (!ignoreChatInput)
             {
@@ -868,17 +893,20 @@ namespace DarkMultiPlayer
             GUI.enabled = true;
             GUILayout.EndHorizontal();
             GUILayout.EndVertical();
-            if ((GUI.GetNameOfFocusedControl() == "SendTextArea") && !chatLocked)
+            if (!selectTextBox)
             {
-                chatLocked = true;
-                InputLockManager.SetControlLock(BLOCK_ALL_CONTROLS, DMP_CHAT_LOCK);
+                if ((GUI.GetNameOfFocusedControl() == "SendTextArea") && !chatLocked)
+                {
+                    chatLocked = true;
+                    InputLockManager.SetControlLock(DMPGuiUtil.BLOCK_ALL_CONTROLS, DMP_CHAT_LOCK);
+                }
+                if ((GUI.GetNameOfFocusedControl() != "SendTextArea") && chatLocked)
+                {
+                    chatLocked = false;
+                    InputLockManager.RemoveControlLock(DMP_CHAT_LOCK);
+                }
             }
-            if ((GUI.GetNameOfFocusedControl() != "SendTextArea") && chatLocked)
-            {
-                chatLocked = false;
-                InputLockManager.RemoveControlLock(DMP_CHAT_LOCK);
-            }
-            if (selectTextBox)
+            else
             {
                 selectTextBox = false;
                 GUI.FocusControl("SendTextArea");

@@ -63,6 +63,10 @@ namespace DarkMultiPlayer
 
         private bool IsScenarioModuleAllowed(string scenarioName)
         {
+            if (scenarioName == null)
+            {
+                return false;
+            }
             //Blacklist asteroid module from every game mode
             if (scenarioName == "ScenarioDiscoverableObjects")
             {
@@ -157,6 +161,7 @@ namespace DarkMultiPlayer
                 if (scenarioEntry.scenarioName == "ContractSystem")
                 {
                     SpawnStrandedKerbalsForRescueMissions(scenarioEntry.scenarioNode);
+                    CreateMissingTourists(scenarioEntry.scenarioNode);
                 }
                 if (scenarioEntry.scenarioName == "ProgressTracking")
                 {
@@ -178,6 +183,24 @@ namespace DarkMultiPlayer
                 }
             }
         }
+
+        private void CreateMissingTourists(ConfigNode contractSystemNode)
+        {
+            ConfigNode contractsNode = contractSystemNode.GetNode("CONTRACTS");
+            foreach (ConfigNode contractNode in contractsNode.GetNodes("CONTRACT"))
+            {
+                if (contractNode.GetValue("type") == "TourismContract" && contractNode.GetValue("state") == "Active")
+                {
+                    foreach (string kerbalName in contractNode.GetValues("kerbalName"))
+                    {
+                        DarkLog.Debug("Spawning missing tourist (" + kerbalName + ") for active tourism contract");
+                        ProtoCrewMember pcm = HighLogic.CurrentGame.CrewRoster.GetNewKerbal(ProtoCrewMember.KerbalType.Tourist);
+                        pcm.name = kerbalName;
+                    }
+                }
+            }
+        }
+
         //Defends against bug #172
         private void SpawnStrandedKerbalsForRescueMissions(ConfigNode contractSystemNode)
         {
@@ -220,7 +243,7 @@ namespace DarkMultiPlayer
             CelestialBody contractBody = FlightGlobals.Bodies[bodyID];
             //Atmo: 10km above atmo, to half the planets radius out.
             //Non-atmo: 30km above ground, to half the planets radius out.
-            double minAltitude = contractBody.atmosphere ? contractBody.Radius + contractBody.maxAtmosphereAltitude + 10000 : contractBody.Radius + 30000;
+            double minAltitude = FinePrint.Utilities.CelestialUtilities.GetMinimumOrbitalAltitude(contractBody, 1.1f);
             double maxAltitude = minAltitude + contractBody.Radius * 0.5;
             Orbit strandedOrbit = Orbit.CreateRandomOrbitAround(FlightGlobals.Bodies[bodyID], minAltitude, maxAltitude);
             ConfigNode[] kerbalPartNode = new ConfigNode[1];
@@ -267,7 +290,7 @@ namespace DarkMultiPlayer
                             pcm.name = kerbalName;
                             AddCrewMemberToRoster(pcm);
                             //Also send it off to the server
-                            NetworkWorker.fetch.SendKerbalProtoMessage(pcm);
+                            VesselWorker.fetch.SendKerbalIfDifferent(pcm);
                         }
                     }
                 }

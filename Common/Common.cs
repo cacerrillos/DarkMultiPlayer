@@ -17,7 +17,7 @@ namespace DarkMultiPlayerCommon
         //Split messages into 8kb chunks to higher priority messages have more injection points into the TCP stream.
         public const int SPLIT_MESSAGE_LENGTH = 8192;
         //Bump this every time there is a network change (Basically, if MessageWriter or MessageReader is touched).
-        public const int PROTOCOL_VERSION = 33;
+        public const int PROTOCOL_VERSION = 38;
         //Program version. This is written in the build scripts.
         public const string PROGRAM_VERSION = "Custom";
         //Compression threshold
@@ -75,6 +75,10 @@ namespace DarkMultiPlayerCommon
 
         public static string ConvertConfigStringToGUIDString(string configNodeString)
         {
+            if (configNodeString == null || configNodeString.Length != 32)
+            {
+                return null;
+            }
             string[] returnString = new string[5];
             returnString[0] = configNodeString.Substring(0, 8);
             returnString[1] = configNodeString.Substring(8, 4);
@@ -326,6 +330,63 @@ namespace DarkMultiPlayerCommon
             stockPartList.Add("mk3FuselageLFO.25");
             stockPartList.Add("mk3FuselageLFO.50");
             stockPartList.Add("mk3FuselageMONO");
+            //1.0 parts
+            stockPartList.Add("kerbalEVAfemale");
+            stockPartList.Add("airbrake1");
+            stockPartList.Add("airlinerCtrlSrf");
+            stockPartList.Add("airlinerMainWing");
+            stockPartList.Add("airlinerTailFin");
+            stockPartList.Add("pointyNoseConeA");
+            stockPartList.Add("pointyNoseConeB");
+            stockPartList.Add("airplaneTailB");
+            stockPartList.Add("fairingSize1");
+            stockPartList.Add("fairingSize2");
+            stockPartList.Add("fairingSize3");
+            stockPartList.Add("HeatShield1");
+            stockPartList.Add("HeatShield2");
+            stockPartList.Add("HeatShield3");
+            stockPartList.Add("wingShuttleDelta");
+            stockPartList.Add("elevonMk3");
+            stockPartList.Add("wingShuttleElevon1");
+            stockPartList.Add("wingShuttleElevon2");
+            stockPartList.Add("wingShuttleRudder");
+            stockPartList.Add("wingShuttleStrake");
+            stockPartList.Add("delta.small");
+            stockPartList.Add("mk2Cockpit.Inline");
+            stockPartList.Add("mk2Cockpit.Standard");
+            stockPartList.Add("mk3Cockpit.Shuttle");
+            stockPartList.Add("ksp.r.largeBatteryPack");
+            stockPartList.Add("solidBooster.sm");
+            stockPartList.Add("fuelTank.long");
+            stockPartList.Add("mk2.1m.Bicoupler");
+            stockPartList.Add("mk2.1m.AdapterLong");
+            stockPartList.Add("mk3FuselageLFO.100");
+            stockPartList.Add("mk3FuselageLFO.25");
+            stockPartList.Add("mk3FuselageLFO.50");
+            stockPartList.Add("mk3FuselageLF.100");
+            stockPartList.Add("mk3FuselageLF.25");
+            stockPartList.Add("mk3FuselageLF.50");
+            stockPartList.Add("xenonTankLarge");
+            stockPartList.Add("mk3Cockpit.Shuttle");
+            stockPartList.Add("FuelCell");
+            stockPartList.Add("FuelCellArray");
+            stockPartList.Add("ISRU");
+            stockPartList.Add("LargeTank");
+            stockPartList.Add("OrbitalScanner");
+            stockPartList.Add("RadialDrill");
+            stockPartList.Add("SmallTank");
+            stockPartList.Add("SurfaceScanner");
+            stockPartList.Add("SurveyScanner");
+            stockPartList.Add("sensorAtmosphere");
+            stockPartList.Add("Large.Crewed.Lab");
+            stockPartList.Add("science.module");
+            stockPartList.Add("radialDrogue");
+            stockPartList.Add("ServiceBay.125");
+            stockPartList.Add("ServiceBay.250");
+            stockPartList.Add("GearFixed");
+            stockPartList.Add("GearFree");
+            stockPartList.Add("GearLarge");
+            stockPartList.Add("GearMedium");
             return stockPartList;
         }
 
@@ -531,10 +592,18 @@ namespace DarkMultiPlayerCommon
 
     public enum WarpMessageType
     {
+        //MCW_VOTE
         REQUEST_VOTE,
         REPLY_VOTE,
+        //ALL
         CHANGE_WARP,
+        //MCW_VOTE/FORCE
+        REQUEST_CONTROLLER,
+        RELEASE_CONTROLLER,
+        //MCW_VOTE/FORCE/LOWEST
+        IGNORE_WARP,
         SET_CONTROLLER,
+        //ALL
         NEW_SUBSPACE,
         CHANGE_SUBSPACE,
         RELOCK_SUBSPACE,
@@ -622,6 +691,14 @@ namespace DarkMultiPlayerCommon
         public long serverClock;
         public double planetTime;
         public float subspaceSpeed;
+    }
+
+    public class PlayerWarpRate
+    {
+        public bool isPhysWarp = false;
+        public int rateIndex = 0;
+        public long serverClock = 0;
+        public double planetTime = 0;
     }
 
     public enum HandshakeReply : int

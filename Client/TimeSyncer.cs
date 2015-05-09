@@ -8,10 +8,10 @@ namespace DarkMultiPlayer
 {
     public class TimeSyncer
     {
-        public bool locked
+        public bool disabled
         {
             get;
-            private set;
+            set;
         }
 
         public bool synced
@@ -23,6 +23,20 @@ namespace DarkMultiPlayer
         public bool workerEnabled;
 
         public int currentSubspace
+        {
+            get;
+            private set;
+        }
+
+        public bool locked
+        {
+            get
+            {
+                return lockedSubspace != null;
+            }
+        }
+
+        public Subspace lockedSubspace
         {
             get;
             private set;
@@ -67,7 +81,7 @@ namespace DarkMultiPlayer
         private List<long> networkLatency = new List<long>();
         private List<float> requestedRatesList = new List<float>();
         private Dictionary<int, Subspace> subspaces = new Dictionary<int, Subspace>();
-        public static TimeSyncer singleton;
+        private static TimeSyncer singleton;
 
         public TimeSyncer()
         {
@@ -85,31 +99,36 @@ namespace DarkMultiPlayer
 
         public void FixedUpdate()
         {
-            if (workerEnabled)
+            if (!workerEnabled)
             {
-                if (synced)
-                {
-                    if ((UnityEngine.Time.realtimeSinceStartup - lastSyncTime) > SYNC_TIME_INTERVAL)
-                    {
-                        lastSyncTime = UnityEngine.Time.realtimeSinceStartup;
-                        NetworkWorker.fetch.SendTimeSync();
-                    }
+                return;
+            }
 
-                    if (!locked && currentSubspace != -1)
-                    {
-                        LockSubspace(currentSubspace);
-                    }
+            if (!synced)
+            {
+                return;
+            }
+
+            if ((UnityEngine.Time.realtimeSinceStartup - lastSyncTime) > SYNC_TIME_INTERVAL)
+            {
+                lastSyncTime = UnityEngine.Time.realtimeSinceStartup;
+                NetworkWorker.fetch.SendTimeSync();
+            }
+
+            //Mod API to disable the time syncer
+            if (disabled)
+            {
+                return;
+            }
             
-                    if (locked)
-                    {
-                        if (WarpWorker.fetch.warpMode == WarpMode.SUBSPACE)
-                        {
-                            VesselWorker.fetch.DetectReverting();
-                        }
-                        //Set the universe time here
-                        SyncTime();
-                    }
+            if (locked)
+            {
+                if (WarpWorker.fetch.warpMode == WarpMode.SUBSPACE)
+                {
+                    VesselWorker.fetch.DetectReverting();
                 }
+                //Set the universe time here
+                SyncTime();
             }
         }
 
@@ -254,7 +273,7 @@ namespace DarkMultiPlayer
                 timeWarpRate = MIN_CLOCK_RATE;
             }
             //Request how fast we *think* we can run (The reciporical of the current warp rate)
-            float tempRequestedRate = subspaces[currentSubspace].subspaceSpeed * (1 / timeWarpRate);
+            float tempRequestedRate = lockedSubspace.subspaceSpeed * (1 / timeWarpRate);
             if (tempRequestedRate > MAX_SUBSPACE_RATE)
             {
                 tempRequestedRate = MAX_SUBSPACE_RATE;
@@ -289,50 +308,27 @@ namespace DarkMultiPlayer
             return false;
         }
 
-        public int LockNewSubspace(long serverTime, double planetariumTime, float subspaceSpeed)
+        public void AddNewSubspace(int subspaceID, long serverTime, double planetariumTime, float subspaceSpeed)
         {
-            int highestSubpaceID = 0;
-            foreach (int subspaceID in subspaces.Keys)
+            Subspace newSubspace = new Subspace();
+            newSubspace.serverClock = serverTime;
+            newSubspace.planetTime = planetariumTime;
+            newSubspace.subspaceSpeed = subspaceSpeed;
+            subspaces[subspaceID] = newSubspace;
+            if (currentSubspace == subspaceID)
             {
-                if (subspaceID > highestSubpaceID)
-                {
-                    highestSubpaceID = subspaceID;
-                }
-            }
-            LockNewSubspace((highestSubpaceID + 1), serverTime, planetariumTime, subspaceSpeed);
-            return (highestSubpaceID + 1);
-        }
-
-        public void LockNewSubspace(int subspaceID, long serverTime, double planetariumTime, float subspaceSpeed)
-        {
-            if (!subspaces.ContainsKey(subspaceID))
-            {
-                Subspace newSubspace = new Subspace();
-                newSubspace.serverClock = serverTime;
-                newSubspace.planetTime = planetariumTime;
-                newSubspace.subspaceSpeed = subspaceSpeed;
-                subspaces.Add(subspaceID, newSubspace);
+                LockSubspace(currentSubspace);
             }
             DarkLog.Debug("Subspace " + subspaceID + " locked to server, time: " + planetariumTime);
         }
 
-        public void LockNewSubspaceToCurrentTime()
+        public void LockTemporarySubspace(long serverClock, double planetTime, float subspaceSpeed)
         {
-            TimeSyncer.fetch.UnlockSubspace();
-            long serverClock = TimeSyncer.fetch.GetServerClock();
-            double universeTime = Planetarium.GetUniversalTime();
-            int newSubspace = TimeSyncer.fetch.LockNewSubspace(serverClock, universeTime, requestedRate);
-            using (MessageWriter mw = new MessageWriter())
-            {
-                mw.Write<int>((int)WarpMessageType.NEW_SUBSPACE);
-                mw.Write<string>(Settings.fetch.playerName);
-                mw.Write<int>(newSubspace);
-                mw.Write<long>(serverClock);
-                mw.Write<double>(universeTime);
-                mw.Write<float>(requestedRate);
-                NetworkWorker.fetch.SendWarpMessage(mw.GetMessageBytes());
-            }
-            TimeSyncer.fetch.LockSubspace(newSubspace);
+            Subspace tempSubspace = new Subspace();
+            tempSubspace.serverClock = serverClock;
+            tempSubspace.planetTime = planetTime;
+            tempSubspace.subspaceSpeed = subspaceSpeed;
+            lockedSubspace = tempSubspace;
         }
 
         public void LockSubspace(int subspaceID)
@@ -340,12 +336,11 @@ namespace DarkMultiPlayer
             if (subspaces.ContainsKey(subspaceID))
             {
                 TimeWarp.SetRate(0, true);
-                locked = true;
+                lockedSubspace = subspaces[subspaceID];
                 DarkLog.Debug("Locked to subspace " + subspaceID + ", time: " + GetUniverseTime());
                 using (MessageWriter mw = new MessageWriter())
                 {
                     mw.Write<int>((int)WarpMessageType.CHANGE_SUBSPACE);
-                    mw.Write<string>(Settings.fetch.playerName);
                     mw.Write<int>(subspaceID);
                     NetworkWorker.fetch.SendWarpMessage(mw.GetMessageBytes());
                 }
@@ -356,12 +351,11 @@ namespace DarkMultiPlayer
         public void UnlockSubspace()
         {
             currentSubspace = -1;
-            locked = false;
+            lockedSubspace = null;
             Time.timeScale = 1f;
             using (MessageWriter mw = new MessageWriter())
             {
                 mw.Write<int>((int)WarpMessageType.CHANGE_SUBSPACE);
-                mw.Write<string>(Settings.fetch.playerName);
                 mw.Write<int>(currentSubspace);
                 NetworkWorker.fetch.SendWarpMessage(mw.GetMessageBytes());
             }
@@ -377,7 +371,7 @@ namespace DarkMultiPlayer
             }
             else
             {
-                DarkLog.Debug("Failed to relock non-existant subspace!");
+                DarkLog.Debug("Failed to relock non-existant subspace " + subspaceID);
             }
         }
 
@@ -392,9 +386,9 @@ namespace DarkMultiPlayer
 
         public double GetUniverseTime()
         {
-            if (synced && locked && (currentSubspace != -1))
+            if (synced && locked)
             {
-                return GetUniverseTime(currentSubspace);
+                return GetUniverseTime(lockedSubspace);
             }
             return 0;
         }
@@ -403,15 +397,20 @@ namespace DarkMultiPlayer
         {
             if (subspaces.ContainsKey(subspace))
             {
-                long realTimeSinceLock = GetServerClock() - subspaces[subspace].serverClock;
-                double realTimeSinceLockSeconds = realTimeSinceLock / 10000000d;
-                double adjustedTimeSinceLockSeconds = realTimeSinceLockSeconds * subspaces[subspace].subspaceSpeed;
-                return subspaces[subspace].planetTime + adjustedTimeSinceLockSeconds;
+                return GetUniverseTime(subspaces[subspace]);
             }
             else
             {
                 return 0;
             }
+        }
+
+        public double GetUniverseTime(Subspace subspace)
+        {
+            long realTimeSinceLock = GetServerClock() - subspace.serverClock;
+            double realTimeSinceLockSeconds = realTimeSinceLock / 10000000d;
+            double adjustedTimeSinceLockSeconds = realTimeSinceLockSeconds * subspace.subspaceSpeed;
+            return subspace.planetTime + adjustedTimeSinceLockSeconds;
         }
 
         public double GetCurrentError()
@@ -425,6 +424,11 @@ namespace DarkMultiPlayer
             return 0;
         }
 
+        public bool SubspaceExists(int subspaceID)
+        {
+            return subspaces.ContainsKey(subspaceID);
+        }
+
         public Subspace GetSubspace(int subspaceID)
         {
             Subspace ss = new Subspace();
@@ -435,6 +439,22 @@ namespace DarkMultiPlayer
                 ss.subspaceSpeed = subspaces[subspaceID].subspaceSpeed;
             }
             return ss;
+        }
+
+        public int GetMostAdvancedSubspace()
+        {
+            double highestTime = double.NegativeInfinity;
+            int retVal = -1;
+            foreach (int subspaceID in subspaces.Keys)
+            {
+                double testTime = GetUniverseTime(subspaceID);
+                if (testTime > highestTime)
+                {
+                    highestTime = testTime;
+                    retVal = subspaceID;
+                }
+            }
+            return retVal;
         }
 
         private bool CanSyncTime()

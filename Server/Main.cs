@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using DarkMultiPlayerCommon;
+using SettingsParser;
 
 namespace DarkMultiPlayerServer
 {
@@ -14,6 +15,7 @@ namespace DarkMultiPlayerServer
         public static bool serverStarting;
         public static bool serverRestarting;
         public static string universeDirectory;
+        public static string configDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config");
         public static Stopwatch serverClock;
         public static HttpListener httpListener;
         private static long ctrlCTime;
@@ -26,12 +28,15 @@ namespace DarkMultiPlayerServer
 
         public static void Main()
         {
+            #if !DEBUG
             try
             {
-
+            #endif
                 //Start the server clock
                 serverClock = new Stopwatch();
                 serverClock.Start();
+
+                Settings.Reset();
 
                 //Set the last player activity time to server start
                 lastPlayerActivity = serverClock.ElapsedMilliseconds;
@@ -51,6 +56,27 @@ namespace DarkMultiPlayerServer
                 //Set universe directory and modfile path
                 universeDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Universe");
                 modFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DMPModControl.txt");
+
+                if (!Directory.Exists(configDirectory))
+                {
+                    Directory.CreateDirectory(configDirectory);
+                }
+
+                string oldSettingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DMPServerSettings.txt");
+                string newSettingsFile = Path.Combine(Server.configDirectory, "Settings.txt");
+                string oldGameplayFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DMPGameplaySettings.txt");
+                string newGameplayFile = Path.Combine(Server.configDirectory, "GameplaySettings.txt");
+
+                // Run the conversion
+                BackwardsCompatibility.ConvertSettings(oldSettingsFile, newSettingsFile);
+                if (File.Exists(oldGameplayFile))
+                {
+                    if (!File.Exists(newGameplayFile))
+                    {
+                        File.Move(oldGameplayFile, newGameplayFile);
+                    }
+                    File.Delete(oldGameplayFile);
+                }
 
                 //Register the server commands
                 CommandHandler.RegisterCommand("exit", Server.ShutDown, "Shuts down the server");
@@ -74,6 +100,19 @@ namespace DarkMultiPlayerServer
                 //Remove player tokens
                 BackwardsCompatibility.RemoveOldPlayerTokens();
 
+                if (System.Net.Sockets.Socket.OSSupportsIPv6)
+                {
+                    Settings.settingsStore.address = "::";
+                }
+
+                DarkLog.Debug("Loading settings...");
+                Settings.Load();
+                if (Settings.settingsStore.gameDifficulty == GameDifficulty.CUSTOM)
+                {
+                    GameplaySettings.Reset();
+                    GameplaySettings.Load();
+                }
+
                 //Test compression
                 if (Settings.settingsStore.compressionEnabled)
                 {
@@ -94,10 +133,14 @@ namespace DarkMultiPlayerServer
                 {
                     if (serverRestarting)
                     {
+                        DarkLog.Debug("Reloading settings...");
                         Settings.Reset();
+                        Settings.Load();
                         if (Settings.settingsStore.gameDifficulty == GameDifficulty.CUSTOM)
                         {
+                            DarkLog.Debug("Reloading gameplay settings...");
                             GameplaySettings.Reset();
+                            GameplaySettings.Load();
                         }
                     }
 
@@ -107,13 +150,13 @@ namespace DarkMultiPlayerServer
                     if (Settings.settingsStore.gameDifficulty == GameDifficulty.CUSTOM)
                     {
                         //Generate the config file by accessing the object.
-                        GameplaySettings.settingsStore.ToString();
+                        DarkLog.Debug("Loading gameplay settings...");
+                        GameplaySettings.Load();
                     }
 
                     //Load universe
                     DarkLog.Normal("Loading universe... ");
                     CheckUniverse();
-                    DarkLog.Normal("Done!");
 
                     DarkLog.Normal("Starting " + Settings.settingsStore.warpMode + " server on port " + Settings.settingsStore.port + "... ");
 
@@ -126,10 +169,9 @@ namespace DarkMultiPlayerServer
                     {
                         Thread.Sleep(500);
                     }
-                    DarkLog.Normal("Done!");
 
                     StartHTTPServer();
-                    DarkLog.Normal("Done!");
+                    DarkLog.Normal("Ready!");
                     DMPPluginHandler.FireOnServerStart();
                     while (serverRunning)
                     {
@@ -171,12 +213,14 @@ namespace DarkMultiPlayerServer
                 }
                 DarkLog.Normal("Goodbye!");
                 Environment.Exit(0);
+            #if !DEBUG
             }
             catch (Exception e)
             {
                 DarkLog.Fatal("Error in main server thread, Exception: " + e);
                 throw;
             }
+            #endif
         }
 
         // Check universe folder size
@@ -224,13 +268,13 @@ namespace DarkMultiPlayerServer
             {
                 Directory.CreateDirectory(universeDirectory);
             }
-            if (!Directory.Exists(Path.Combine(Server.universeDirectory, "Crafts")))
+            if (!Directory.Exists(Path.Combine(universeDirectory, "Crafts")))
             {
-                Directory.CreateDirectory(Path.Combine(Server.universeDirectory, "Crafts"));
+                Directory.CreateDirectory(Path.Combine(universeDirectory, "Crafts"));
             }
-            if (!Directory.Exists(Path.Combine(Server.universeDirectory, "Flags")))
+            if (!Directory.Exists(Path.Combine(universeDirectory, "Flags")))
             {
-                Directory.CreateDirectory(Path.Combine(Server.universeDirectory, "Flags"));
+                Directory.CreateDirectory(Path.Combine(universeDirectory, "Flags"));
             }
             if (!Directory.Exists(Path.Combine(universeDirectory, "Players")))
             {
@@ -244,13 +288,13 @@ namespace DarkMultiPlayerServer
             {
                 Directory.CreateDirectory(Path.Combine(universeDirectory, "Vessels"));
             }
-            if (!Directory.Exists(Path.Combine(Server.universeDirectory, "Scenarios")))
+            if (!Directory.Exists(Path.Combine(universeDirectory, "Scenarios")))
             {
-                Directory.CreateDirectory(Path.Combine(Server.universeDirectory, "Scenarios"));
+                Directory.CreateDirectory(Path.Combine(universeDirectory, "Scenarios"));
             }
-            if (!Directory.Exists(Path.Combine(Server.universeDirectory, "Scenarios", "Initial")))
+            if (!Directory.Exists(Path.Combine(universeDirectory, "Scenarios", "Initial")))
             {
-                Directory.CreateDirectory(Path.Combine(Server.universeDirectory, "Scenarios", "Initial"));
+                Directory.CreateDirectory(Path.Combine(universeDirectory, "Scenarios", "Initial"));
             }
         }
         //Get mod file SHA
@@ -314,7 +358,7 @@ namespace DarkMultiPlayerServer
             {
                 ctrlCTime = DateTime.UtcNow.Ticks;
                 args.Cancel = true;
-                ShutDown("Caught Crtl+C");
+                ShutDown("Caught Ctrl+C");
             }
             else
             {
@@ -439,7 +483,7 @@ namespace DarkMultiPlayerServer
             catch (Exception e)
             {
                 //Ignore the EngGetContext throw while shutting down the HTTP server.
-                if (Server.serverRunning)
+                if (serverRunning)
                 {
                     DarkLog.Error("Exception while listening to HTTP server!, Exception:\n" + e);
                     Thread.Sleep(1000);
